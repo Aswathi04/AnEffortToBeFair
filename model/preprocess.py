@@ -1,57 +1,35 @@
 import pandas as pd
-import numpy as np
 from sklearn.preprocessing import OrdinalEncoder
 
-def load_and_preprocess(filepath: str):
-    """
-    Loads HMDA CSV, filters, cleans, and encodes features for model training.
-    """
-    # Load CSV (low_memory=False prevents mixed type inference warnings on large files)
+def load_and_preprocess(filepath: str, protected_col: str = 'race', target_col: str = 'loan_approved'):
     df = pd.read_csv(filepath, low_memory=False)
 
-    # Filter to only rows where action_taken IN (1,3)
-    df = df[df['action_taken'].isin([1, 3])].copy()
+    # Validate that required columns exist
+    if protected_col not in df.columns:
+        raise ValueError(f"Protected column '{protected_col}' not found. Available: {df.columns.tolist()}")
+    if target_col not in df.columns:
+        raise ValueError(f"Target column '{target_col}' not found. Available: {df.columns.tolist()}")
 
-    # Select only the required columns
-    cols_to_keep = [
-        'action_taken', 'derived_race', 'derived_sex',
-        'loan_amount', 'income', 'loan_to_value_ratio',
-        'debt_to_income_ratio', 'property_value', 'census_tract'
-    ]
-    df = df[cols_to_keep]
+    # Drop rows with nulls in key columns
+    df = df.dropna(subset=[protected_col, target_col])
 
-    # Handle nulls and 'Exempt' values for numeric columns
-    for col in ['income', 'loan_to_value_ratio', 'property_value']:
-        df = df.dropna(subset=[col])
-        df = df[df[col] != 'Exempt']
-        # Safely convert to float
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-    
-    # Drop any remaining rows that turned into NaN during numeric coercion
-    df = df.dropna()
+    # Target: must be binary (0/1)
+    df['approved'] = df[target_col].astype(int)
 
-    # Preprocessing target: binary label. approved = 1 if action_taken == 1, else 0
-    df['approved'] = (df['action_taken'] == 1).astype(int)
+    # Sensitive attribute
+    sensitive = df[protected_col].astype(str)
 
-    # Encode DTI ratio ordinally (since it comes as string ranges like '20%-<30%')
-    encoder = OrdinalEncoder()
-    df[['debt_to_income_ratio']] = encoder.fit_transform(df[['debt_to_income_ratio']])
-
-    # Sample size: use 50,000 rows max for prototype
-    if len(df) > 50000:
-        df = df.sample(n=50000, random_state=42)
-
-    # Define Feature matrix (X), Target (y), and Sensitive Attributes (sensitive)
-    # Exclude protected attributes and proxy variables from the training features
+    # Feature columns: everything numeric except the target and protected col
+    exclude = [protected_col, target_col, 'approved', 'applicant_id']
     feature_cols = [
-        'loan_amount', 'income', 'loan_to_value_ratio', 
-        'debt_to_income_ratio', 'property_value'
+        col for col in df.columns
+        if col not in exclude and pd.api.types.is_numeric_dtype(df[col])
     ]
-    
-    X = df[feature_cols]
+
+    if not feature_cols:
+        raise ValueError("No numeric feature columns found after excluding protected and target columns.")
+
+    X = df[feature_cols].fillna(0)
     y = df['approved']
-    sensitive = df['derived_race']
-    
-    # Returning the raw dataframe as well so we have access to 'census_tract' and 
-    # original text values for the counterfactual/proxy analysis endpoints later.
+
     return X, y, sensitive, df
