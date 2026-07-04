@@ -7,6 +7,11 @@ def compute_fairness_metrics(y_true, y_pred, sensitive_features):
     Computes accuracy, demographic parity gap, equalized odds gap, 
     and specific approval rates for each protected group.
     """
+    # Ensure labels are strictly 0/1 ints — fairlearn's equalized_odds_difference
+    # requires this and fails on floats/bools/other encodings.
+    y_true = np.asarray(y_true).astype(int)
+    y_pred = np.asarray(y_pred).astype(int)
+
     dp_gap = demographic_parity_difference(y_true, y_pred, sensitive_features=sensitive_features)
     eo_gap = equalized_odds_difference(y_true, y_pred, sensitive_features=sensitive_features)
     accuracy = accuracy_score(y_true, y_pred)

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { uploadDataset, runAudit, runDebias } from '../api/endpoints';
+import { uploadDataset, runAudit, runDebias, runExplain } from '../api/endpoints';
 
 export default function UploadPage() {
   const [file, setFile] = useState(null);
@@ -16,12 +16,18 @@ export default function UploadPage() {
   const [debiasingData, setDebiasingData] = useState(null);
   const [debiasingLoading, setDebiasingLoading] = useState(false);
 
+  // Gemini explanation state
+  const [baselineExplanation, setBaselineExplanation] = useState(null);
+  const [debiasingExplanation, setDebiasingExplanation] = useState(null);
+
   const handleFileChange = (e) => {
     if (e.target.files[0]) {
       setFile(e.target.files[0]);
       setStats(null);
       setReportData(null);
       setDebiasingData(null);
+      setBaselineExplanation(null);
+      setDebiasingExplanation(null);
     }
   };
 
@@ -44,9 +50,15 @@ export default function UploadPage() {
     setLoading(true);
     setError(null);
     setDebiasingData(null);
+    setBaselineExplanation(null);
+    setDebiasingExplanation(null);
     try {
       const data = await runAudit(stats.session_id, protectedAttr, targetAttr);
       setReportData(data);
+      try {
+        const explain = await runExplain(data, "baseline");
+        setBaselineExplanation(explain.explanation);
+      } catch (_) {}
     } catch (err) {
       setError("Audit failed. Check backend terminal for details.");
     } finally {
@@ -56,6 +68,7 @@ export default function UploadPage() {
 
   const handleDebias = async (weight) => {
     setDebiasingLoading(true);
+    setDebiasingExplanation(null);
     try {
       const data = await runDebias(
         stats.session_id,
@@ -64,6 +77,10 @@ export default function UploadPage() {
         targetAttr
       );
       setDebiasingData(data);
+      try {
+        const explain = await runExplain(data, "debiased");
+        setDebiasingExplanation(explain.explanation);
+      } catch (_) {}
     } catch (err) {
       setError("Debiasing failed. Check backend terminal.");
     } finally {
@@ -87,6 +104,8 @@ export default function UploadPage() {
     setFile(null);
     setProtectedAttr("");
     setTargetAttr("");
+    setBaselineExplanation(null);
+    setDebiasingExplanation(null);
   };
 
   return (
@@ -211,6 +230,16 @@ export default function UploadPage() {
                   : '✓ Model meets fair lending standards. Bias gap is within acceptable threshold.'}
               </p>
             </div>
+
+            {/* Gemini baseline explanation */}
+            {baselineExplanation && (
+              <div className="mt-4 p-4 bg-blue-950/40 border border-blue-500/20 rounded-2xl">
+                <h3 className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-2">
+                  AI Compliance Summary — Before Debiasing
+                </h3>
+                <p className="text-sm text-gray-300 leading-relaxed">{baselineExplanation}</p>
+              </div>
+            )}
           </div>
 
           {/* DEBIASING SLIDER */}
@@ -326,6 +355,16 @@ export default function UploadPage() {
                       : '✓ Model now meets fair lending standards. Safe to proceed to deployment review.'}
                   </p>
                 </div>
+
+                {/* Gemini debiasing explanation */}
+                {debiasingExplanation && (
+                  <div className="p-4 bg-purple-950/40 border border-purple-500/20 rounded-2xl">
+                    <h3 className="text-xs font-bold text-purple-400 uppercase tracking-widest mb-2">
+                      AI Compliance Summary — After Debiasing
+                    </h3>
+                    <p className="text-sm text-gray-300 leading-relaxed">{debiasingExplanation}</p>
+                  </div>
+                )}
 
               </div>
             )}

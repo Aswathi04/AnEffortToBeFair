@@ -28,3 +28,7 @@ export async function runDebias(sessionId, fairnessWeight, protectedCol, targetC
   });
   return data;
 }
+export async function runExplain(metrics, stage) {
+  const { data } = await apiClient.post('/explain', { metrics, stage });
+  return data;
+}
