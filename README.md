@@ -1,146 +1,97 @@
-# FairLend — AI Fairness Auditing Platform
+FairLend AI Audit
+Real-time disparate impact analysis and bias mitigation for lending decisions.
+FairLend AI Audit is a full-stack application that lets you upload a lending dataset, train a baseline credit approval model, measure its fairness across demographic groups, and then apply a mitigation algorithm to reduce disparities — all with a single, adjustable tradeoff control between accuracy and fairness.
 
-> *An effort to be fair.* A tool for detecting, explaining, and mitigating bias in machine learning models — built for anyone who believes the algorithm should treat everyone equally.
+The Problem
+Lending algorithms can unintentionally reproduce or amplify historical bias, even when protected attributes like race and gender are never used as direct model inputs. Regulators and lenders need a way to quantify that risk in concrete, auditable terms — not just intuit it.
+FairLend AI Audit answers a simple question: if you approve loans with this model, how differently does it treat similarly qualified applicants across demographic groups — and how much accuracy would you trade to close that gap?
 
----
+How It Works
+The application runs a three-stage pipeline:
+    1. Upload — a CSV of loan application data is ingested and previewed.
+    2. Audit — a baseline logistic regression model is trained on approved features (income, loan amount, debt-to-income ratio, loan-to-value ratio), and fairness metrics are computed across demographic groups.
+    3. Debias — a constrained optimization technique re-trains the model under a fairness constraint, producing a new model with a measurably smaller disparity — with the strength of that constraint controlled by a single tunable weight.
+CSV Upload  →  Baseline Model  →  Fairness Metrics  →  Mitigated Model  →  Before/After Comparison
+Fairness Metrics
+Two standard fairness criteria are computed for every model:
+    • Demographic Parity (DP) Gap — the difference in approval rates between demographic groups.
+    • Equalized Odds (EO) Gap — the difference in true positive rates between groups (i.e., are equally qualified applicants treated equally?).
+Bias Mitigation
+Mitigation is performed using Fairlearn's ExponentiatedGradient reduction technique, constrained by a demographic parity bound. Rather than using a fixed fairness threshold, the bound is calculated relative to each dataset's own baseline disparity — so the fairness/accuracy tradeoff control behaves consistently and meaningfully regardless of how biased the input data starts out.
 
-## What it does
+Real-World Validation
+The pipeline has been tested end-to-end against real regulatory data: mortgage applications from the Home Mortgage Disclosure Act (HMDA) public dataset (California, 2023, ~227,000 records after cleaning).
+	Accuracy	DP Gap	EO Gap
+Baseline	79.7%	0.039	0.018
+Debiased	77.2%	0.022 (−44%)	0.025
 
-FairLend lets you upload a trained ML model and dataset, audit it for bias across protected attributes (gender, race, age, etc.), and apply debiasing techniques — all through a clean web interface. Gemini AI explains the bias findings in plain language so non-technical stakeholders can understand the results.
+This mirrors a well-known finding in the fairness literature: optimizing for demographic parity doesn't automatically improve equalized odds, and can occasionally trade one fairness notion for another — which is exactly the kind of nuance this tool is designed to surface, not hide.
 
-**Three core workflows:**
+Data Pipeline
+Raw HMDA exports go through a cleaning pipeline before modeling:
+    • Filtering to originated vs. denied loan actions
+    • Converting income to consistent units
+    • Resolving mixed exact/bucketed debt-to-income values to numeric midpoints
+    • Removing data-entry outliers (e.g. erroneous multi-billion dollar income entries)
+    • Explicit exclusion of interest_rate as a candidate feature, after confirming it leaks the outcome label (it's only populated for approved loans)
+    • An explicit allowlist of permitted model features, preventing proxy variables (like neighborhood demographic composition) from silently entering the model
 
-- **Upload** — Upload your dataset and model for analysis
-- **Audit** — Detect bias using fairness metrics (demographic parity, equalized odds, etc.) powered by Microsoft Fairlearn
-- **Debias** — Apply mitigation strategies and compare the fairness/accuracy tradeoff before and after
+Tech Stack
+Backend
+    • FastAPI (Python)
+    • scikit-learn — baseline logistic regression modeling
+    • Fairlearn — fairness metrics and bias mitigation
+    • Google Gemini API integration for AI-assisted analysis
+Frontend
+    • React + Vite
 
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Backend API | FastAPI + Uvicorn |
-| ML & Fairness | scikit-learn, Fairlearn |
-| AI Explanations | Google Gemini AI |
-| Storage | Google Cloud Storage, Firebase/Firestore |
-| Frontend | React (fairlend-ui) |
-| Data | pandas, numpy |
-| Containerisation | Docker |
-
----
-
-## Project Structure
-
-```
-AnEffortToBeFair/
-├── main.py               # FastAPI app entry point
+Architecture
+├── main.py                  # FastAPI entrypoint
 ├── routers/
-│   ├── upload.py         # Dataset/model upload endpoints
-│   ├── train.py          # Audit/training endpoints
-│   └── debias_router.py  # Debiasing endpoints
-├── model/                # ML model logic
-├── utils/                # Helper functions
-├── storage/              # Cloud storage integration
-├── data/                 # Sample/reference datasets
-├── fairlend-ui/          # React frontend
-├── Dockerfile
-└── requirements.txt
-```
+│   ├── upload.py             # Dataset ingestion
+│   ├── train.py              # Baseline model training + audit
+│   ├── debias_router.py      # Bias mitigation
+│   └── gemini_router.py      # AI-assisted analysis
+├── model/
+│   ├── preprocess.py          # Feature extraction & allowlisting
+│   ├── baseline.py            # Model training
+│   ├── debias.py               # Fairness-constrained retraining
+│   ├── metrics.py              # Fairness metric computation
+│   └── counterfactual.py       # Individual-level fairness testing
+└── fairlend-ui/               # React frontend
 
----
-
-## Getting Started
-
-### Prerequisites
-- Python 3.10+
-- Node.js 18+ (for the frontend)
-- Google Cloud project with Storage and Firestore enabled
-- Firebase Admin credentials
-
-### Backend Setup
-
-```bash
-# Clone the repo
-git clone https://github.com/Aswathi04/AnEffortToBeFair.git
-cd AnEffortToBeFair
-
-# Create and activate virtual environment
+Running Locally
+Backend
+# from the project root
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+venv\Scripts\Activate.ps1      # Windows PowerShell
+# source venv/bin/activate     # macOS/Linux
 
-# Install dependencies
 pip install -r requirements.txt
 
-# Set up environment variables
-cp .env.example .env
-# Fill in your Google Cloud and Firebase credentials in .env
-
-# Run the API
-uvicorn main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-The API will be live at `http://localhost:8000`. Visit `http://localhost:8000/docs` for the interactive Swagger UI.
-
-### Frontend Setup
-
-```bash
+uvicorn main:app --reload
+The API will be available at http://127.0.0.1:8000.
+Frontend
 cd fairlend-ui
 npm install
-npm start
-```
+npm run dev
+The app will be available at the URL Vite prints in the terminal (typically http://localhost:5173).
+Environment Variables
+The Gemini integration and cloud storage features require the following to be set (e.g. in a .env file):
+GEMINI_API_KEY=your_key_here
+BUCKET_NAME=your_gcs_bucket        # optional, for future cloud storage support
+FIRESTORE_COLLECTION=your_collection   # optional, for future cloud storage support
+Basic Usage
+    1. Start the backend and frontend as above.
+    2. Upload a lending CSV (columns: race, gender, income, loan_amount, dti, ltv, loan_approved).
+    3. Run an audit to see baseline fairness metrics.
+    4. Adjust the fairness weight and run debiasing to see the mitigated model's tradeoffs.
 
-### Docker
+Roadmap
+    • Counterfactual fairness testing (individual-level "what if this applicant's protected attribute were different?" analysis)
+    • Cloud-backed persistent storage for multi-session audit history
+    • Deployment to a persistent-filesystem hosting environment
 
-```bash
-docker build -t fairlend .
-docker run -p 8000:8000 fairlend
-```
+Why This Project
+Fairness in algorithmic decision-making isn't a checkbox — it's a set of measurable, sometimes competing tradeoffs. This project was built to make those tradeoffs visible and interactive, using real regulatory data rather than synthetic examples, so the numbers reflect the kind of bias that actually shows up in lending markets today.
 
----
-
-## API Endpoints
-
-| Method | Route | Description |
-|---|---|---|
-| GET | `/` | Health check |
-| POST | `/upload` | Upload dataset and model |
-| POST | `/audit` | Run bias audit |
-| POST | `/debias` | Apply debiasing and return results |
-
-Full interactive docs available at `/docs` when the server is running.
-
----
-
-## Environment Variables
-
-Create a `.env` file in the project root:
-
-```
-GOOGLE_CLOUD_PROJECT=your_project_id
-GOOGLE_APPLICATION_CREDENTIALS=path/to/credentials.json
-FIREBASE_ADMIN_SDK=path/to/firebase_admin.json
-GEMINI_API_KEY=your_gemini_api_key
-```
-
----
-
-## Fairness Metrics Used
-
-- **Demographic Parity** — equal positive prediction rates across groups
-- **Equalized Odds** — equal true positive and false positive rates
-- **Equal Opportunity** — equal true positive rates across groups
-
-Mitigation strategies are applied via Fairlearn's `ExponentiatedGradient` and `ThresholdOptimizer`.
-
----
-
-## Contributing
-
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
-
----
-
-## License
-
-MIT
