@@ -1,6 +1,13 @@
 import pandas as pd
 from sklearn.preprocessing import OrdinalEncoder
 
+# Explicit allowlist: only these numeric columns are ever used as model features,
+# regardless of what else exists in the uploaded CSV. Extend this list deliberately
+# if you add new legitimate features later — don't let it auto-detect "everything numeric",
+# since raw HMDA exports include tract-level demographic proxies (e.g.
+# tract_minority_population_percent) that would leak race-correlated info into
+# the model and undermine the fairness analysis.
+ALLOWED_FEATURE_COLS = ["income", "loan_amount", "dti", "ltv"]
 def load_and_preprocess(filepath: str, protected_col: str = 'race', target_col: str = 'loan_approved'):
     df = pd.read_csv(filepath, low_memory=False)
 
@@ -19,15 +26,13 @@ def load_and_preprocess(filepath: str, protected_col: str = 'race', target_col: 
     # Sensitive attribute
     sensitive = df[protected_col].astype(str)
 
-    # Feature columns: everything numeric except the target and protected col
-    exclude = [protected_col, target_col, 'approved', 'applicant_id']
-    feature_cols = [
-        col for col in df.columns
-        if col not in exclude and pd.api.types.is_numeric_dtype(df[col])
-    ]
-
+    # Feature columns: explicit allowlist, restricted to columns that actually exist
+    feature_cols = [col for col in ALLOWED_FEATURE_COLS if col in df.columns]
     if not feature_cols:
-        raise ValueError("No numeric feature columns found after excluding protected and target columns.")
+        raise ValueError(
+            f"None of the expected feature columns {ALLOWED_FEATURE_COLS} were found in the dataset. "
+            f"Available columns: {df.columns.tolist()}"
+        )
 
     X = df[feature_cols].fillna(0)
     y = df['approved']

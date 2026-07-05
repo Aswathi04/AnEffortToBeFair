@@ -15,11 +15,9 @@ class TrainRequest(BaseModel):
 @router.post("/audit")
 async def train_baseline_model(request: TrainRequest):
     session_id = request.session_id
-
     local_filepath = get_local_path(session_id)
     if not os.path.exists(local_filepath):
         raise HTTPException(status_code=404, detail="Dataset not found for this session.")
-
     try:
         X, y, sensitive, _ = load_and_preprocess(
             local_filepath,
@@ -29,7 +27,7 @@ async def train_baseline_model(request: TrainRequest):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    baseline_model, metrics, data_splits = train_baseline(X, y, sensitive)
+    baseline_model, metrics, data_splits, scaler = train_baseline(X, y, sensitive)
 
     return {
         "session_id": session_id,

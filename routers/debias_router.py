@@ -25,13 +25,15 @@ async def apply_debiasing(request: DebiasRequest):
         protected_col=request.protected_column,
         target_col=request.target_column
     )
-    _, _, data_splits = train_baseline(X, y, sensitive)
+
+    _, baseline_metrics, data_splits, scaler = train_baseline(X, y, sensitive)
     X_train, X_test, y_train, y_test, s_train, s_test = data_splits
 
     mitigator, metrics = run_debiasing(
         X_train, y_train, s_train,
         X_test, y_test, s_test,
-        request.fairness_weight
+        request.fairness_weight,
+        baseline_dp_gap=baseline_metrics["demographic_parity_gap"]
     )
 
     return metrics
